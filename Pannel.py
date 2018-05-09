@@ -1,4 +1,6 @@
 from PIL import Image
+import StreamDeck.StreamDeck as StreamDeck
+
 
 
 def _convert_png_pixels(path):
@@ -10,10 +12,23 @@ def _convert_png_pixels(path):
 
     for x in range(72):
         for y in range(72):
-            for ch in [2, 0, 1]:  # This represents the color order (BRG for the StreamDeck)
+            for ch in [2, 1, 0]:  # This represents the color order (BRG for the StreamDeck)
                 pixels.append(px[x, y][ch])
 
     return pixels
+
+
+def key_callback(deck, key, state):
+    """A decorator function serving as a template for key changes callbacks"""
+    print("Deck {} Key {} = {}".format(deck.id(), key, state), flush=True)
+
+    if state:
+        deck.set_key_image(key, get_random_key_colour_image(deck))
+
+        if key == d.key_count() - 1:
+            deck.reset()
+            deck.close()
+
 
 
 if __name__ == '__main__':
