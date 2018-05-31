@@ -1,6 +1,13 @@
+"""A set of Classes and functions to control the StreamDeck based on a python StreamDeck library at:
+https://github.com/abcminiuser/python-elgato-streamdeck
+
+"""
+
 from PIL import Image
 import StreamDeck.StreamDeck as StreamDeck
+from rx.subjects
 
+StreamDeck.DeviceManager
 
 
 def _convert_png_pixels(path):
