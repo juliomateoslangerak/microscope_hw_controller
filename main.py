@@ -12,6 +12,7 @@ CONTROLLER_IP = '10.61.19.90'
 BROADCAST_DOMAIN = '<broadcast>'
 RECEIVE_PORT = 5000
 BROADCAST_PORT = 5566
+NR_CHANNELS = 3
 
 # Creating a socket to broadcast the controller changes
 broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -30,14 +31,13 @@ def _read_from_db(db, key):
 
 def _pull_from_channel(channel_nr):
     while True:
-        # Simulating by now
-        yield 'channel' + str(channel_nr) + '=' + str(random.randint(0, 100))
-        # time.sleep(.001)
-
+        # TODO: Simulating for now
+        yield '["hwc","float","ch_' + str(channel_nr) + ':exp_time",' + str(random.random()) + ']'
+        time.sleep(random.randint(0, 1))
 
 
 def _write_to_controller(key, value):
-    print('Writing {} to {}'.format(value, key))
+    print('Writing controller {} to {}'.format(value, key))
 
 
 def _parse_key_value(s):
@@ -84,35 +84,54 @@ def _socket_generator(host, port, prefix_length=4):
         yield datagram
 
 
+def _test_socket_generator():
+    while True:
+        # TODO: Simulating for now
+        yield '["udp_cockpit","int","ch_' + str(random.randint(0, 3)) + ':power",' + str(random.randint(0, 100)) + ']'
+        # time.sleep(random.randint(5, 10))
+
+
 def _broadcast_state(message, bc_socket):
-    bc_socket.sendto(message, (BROADCAST_DOMAIN, BROADCAST_PORT))
+    # Simulation
+    print('Broadcasting type {}, key {} and value {} through {}'.format(message[1], message[2], message[3], str(bc_socket)))
+    # bc_socket.sendto(message, (BROADCAST_DOMAIN, BROADCAST_PORT))
 
-
-def my_generator(n=10):
-    # a generator that yields items instead of returning a list
-    yield 'key=' + str(n)
-    yield 'key=' + str(n+2)
 
 
 def main():
     # Connect to the redis database to store the state
-    redis_db = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True, encoding='utf-8')
+    # redis_db = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True, encoding='utf-8')
+    redis_db = 'Redis'  # for simulation purposes
 
-    # source = Observable.from_(['channel1:exp_time=0.123', 'channel2:ex_power=80.0']).publish()
-    # source = Observable.from_(my_generator(10)).publish()
-    # udp_source = Observable.from_(_socket_generator(MASTER_IP, RECEIVE_PORT)).publish()
-    controller_source = Observable.from_(_pull_from_channel(0)).publish()
+    # Defining the UDP source
+    udp_source = Observable.from_(_test_socket_generator())
 
-    # udp_mapped = udp_source.map(lambda s: _parse_key_value(s))
-    controller_mapped = controller_source.map(lambda s: _parse_key_value(s))
+    # Defining the hw controller source
+    channel_source = []
+    for ch in range(NR_CHANNELS):
+        channel_source.append(Observable.from_(_pull_from_channel(ch)) \
+                              .distinct_until_changed())  # We only want the values that change
 
-    # udp_mapped.subscribe(lambda x: _write_to_controller(x[0], x[1]))
-    # udp_mapped.subscribe(lambda x: _write_to_db('Redis', x[0], x[1]))
-    controller_mapped.subscribe(lambda x: _write_to_controller(x[0], x[1]))
-    controller_mapped.subscribe(lambda x: _write_to_db('Redis', x[0], x[1]))
 
-    # udp_source.connect()
-    controller_source.connect()
+    hwc_source = Observable.merge(channel_source)
+
+    merged_source = Observable.merge(hwc_source, udp_source) \
+                              .map(lambda s: json.loads(s)) \
+                              .publish()
+
+    hwc_sink = merged_source.filter(lambda x: x[0].startswith('udp')) \
+                            .subscribe(on_next=lambda x: _write_to_controller(x[2], x[3]),
+                                       on_error=lambda e: print(e))
+
+    udp_sink = merged_source.filter(lambda x: x[0].startswith('hwc')) \
+                            .subscribe(on_next=lambda x: _broadcast_state(x, broadcast_socket),
+                                       on_error=lambda e: print(e))
+
+    db_sink = merged_source.subscribe(on_next=lambda x: _write_to_db(redis_db, x[2], x[3]),
+                                      on_error=lambda e: print(e))
+
+
+    merged_source.connect()
 
 
 if __name__=='__main__':
